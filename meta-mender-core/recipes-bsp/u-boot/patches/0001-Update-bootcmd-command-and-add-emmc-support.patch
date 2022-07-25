@@ -1,0 +1,34 @@
+From 11acbc98c0535546f7d5eb43398fa1d8eec27fe0 Mon Sep 17 00:00:00 2001
+From: Mahdi MGALLES <mahdi.mgalles@external.hutchinson.com>
+Date: Tue, 3 Aug 2021 08:39:50 +0000
+Subject: [PATCH] Update bootcmd command and add emmc support
+
+Signed-off-by: Mahdi MGALLES <mahdi.mgalles@external.hutchinson.com>
+---
+ include/configs/imx8qxp_mek.h | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/include/configs/imx8qxp_mek.h b/include/configs/imx8qxp_mek.h
+index 6c8b8b1..18c0186 100644
+--- a/include/configs/imx8qxp_mek.h
++++ b/include/configs/imx8qxp_mek.h
+@@ -283,7 +283,7 @@
+ 		"fi;\0"
+ 
+ #define CONFIG_BOOTCOMMAND \
+-	   "mmc dev ${mmcdev}; if mmc rescan; then " \
++	   "run mender_setup;setenv mmcargs setenv bootargs console=${console},${baudrate} earlycon root=${mender_kernel_root}; mmc dev ${mmcdev}; if mmc rescan; then " \
+ 		   "if run loadbootscript; then " \
+ 			   "run bootscript; " \
+ 		   "else " \
+@@ -327,7 +327,6 @@
+ 
+ /* On LPDDR4 board, USDHC1 is for eMMC, USDHC2 is for SD on CPU board
+   */
+-#define CONFIG_SYS_MMC_ENV_DEV		1   /* USDHC2 */
+ #define CONFIG_MMCROOT			"/dev/mmcblk1p2"  /* USDHC2 */
+ #define CONFIG_SYS_FSL_USDHC_NUM	2
+ 
+-- 
+2.7.4
+

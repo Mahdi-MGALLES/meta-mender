@@ -1,0 +1,138 @@
+#!/bin/sh
+
+#to copy in /usr/share/mender/modules/v3/
+
+#set -e
+
+STATE="$1"
+FILES="$2"
+
+update_files_tar="$FILES"/files/update_payload.tar
+
+PRIMARY_PARTITION="/dev/mmcblk0p2"
+SECONDARY_PARTITION="/dev/mmcblk0p3"
+
+ACTIVE_PARTITION=$PRIMARY_PARTITION
+BACKUP_PARTITION=$SECONDARY_PARTITION
+
+BACKUP_MOUNT_POINT="/media/backup"
+
+case "$STATE" in
+
+    PerformsFullUpdate)
+        echo "No"
+        ;;
+
+    NeedsArtifactReboot)
+        echo "Automatic"
+        ;;
+
+    SupportsRollback)
+        #echo "AutomaticDualRootfs"
+        echo "Yes"        
+	;;
+
+    ArtifactInstall)
+        if [ ! -x /sbin/fw_printenv ]; then
+            exit 1
+        fi
+
+        curr_mender_boot_part=$(/sbin/fw_printenv mender_boot_part | awk -F = '{ print $2 }')
+
+	    # set inactive partition to active partition	
+        # done before copy for easy rollback (same rollback if error in install or reboot)
+        echo "Setting inactive partition to active for future boot..."
+        if [ $curr_mender_boot_part = "2" ]; then 
+            ACTIVE_PARTITION=$PRIMARY_PARTITION
+            BACKUP_PARTITION=$SECONDARY_PARTITION
+
+	        /sbin/fw_setenv "mender_boot_part" 3
+	        /sbin/fw_setenv "mender_boot_part_hex" 3
+	        /sbin/fw_setenv "bootcount" 0
+	        /sbin/fw_setenv "upgrade_available" 1
+            sync
+        elif [ $curr_mender_boot_part = "3" ]; then 
+            ACTIVE_PARTITION=$SECONDARY_PARTITION
+            BACKUP_PARTITION=$PRIMARY_PARTITION
+
+	        /sbin/fw_setenv "mender_boot_part" 2
+	        /sbin/fw_setenv "mender_boot_part_hex" 2
+	        /sbin/fw_setenv "bootcount" 0
+	        /sbin/fw_setenv "upgrade_available" 1
+            sync
+        else 
+	        echo "Fatal error: mender_boot_part is undefined." && exit 1
+        fi    
+        echo "Inactive partition set to active."
+
+        # copy active partition to inactive partition	
+        echo "Creating mount point..."   
+        if [ -d $BACKUP_MOUNT_POINT ]; then
+            rm -r $BACKUP_MOUNT_POINT
+        fi
+
+        mkdir $BACKUP_MOUNT_POINT
+        mount -t ext4 $BACKUP_PARTITION $BACKUP_MOUNT_POINT
+
+        echo "Copying data for backup from $ACTIVE_PARTITION to $BACKUP_PARTITION..."
+        rsync -axHAWXS --delete /bin/ $BACKUP_MOUNT_POINT/bin/
+        echo "bin directory done"
+        rsync -axHAWXS --delete /boot/ $BACKUP_MOUNT_POINT/boot/
+        echo "boot directory done"
+        rsync -axHAWXS --delete /etc/ $BACKUP_MOUNT_POINT/etc/
+        echo "etc directory done"
+        rsync -axHAWXS --delete /lib/ $BACKUP_MOUNT_POINT/lib/
+        echo "lib directory done"
+        rsync -axHAWXS --delete /opt/ $BACKUP_MOUNT_POINT/opt/
+        echo "opt directory done"
+        rsync -axHAWXS --delete /sbin/ $BACKUP_MOUNT_POINT/sbin/
+        echo "sbin directory done"
+        rsync -axHAWXS --delete /unit_tests/ $BACKUP_MOUNT_POINT/unit_tests/
+        echo "unit_tests directory done"
+        rsync -axHAWXS --delete /usr/ $BACKUP_MOUNT_POINT/usr/
+        echo "usr directory done"
+        rsync -axHAWXS --delete /var/ $BACKUP_MOUNT_POINT/var/
+        echo "var directory done"
+        sync
+        echo "Backup data copied."
+
+        #uncompress data directly to directory tree of inactive partition
+        echo "Uncompressing payload to $BACKUP_PARTITION..."
+        tar -xf ${update_files_tar} -C $BACKUP_MOUNT_POINT
+        sync
+        echo "Payload installed to $BACKUP_PARTITION."
+
+        echo "Cleaning mount point..."
+        umount $BACKUP_MOUNT_POINT
+        rm -r $BACKUP_MOUNT_POINT
+        echo "$BACKUP_MOUNT_POINT unmounted."
+        ;;
+
+
+    ArtifactRollback)
+        set -e
+        if [ ! -x /sbin/fw_printenv ]; then
+            exit 1
+        fi
+
+        curr_mender_boot_part=$(/sbin/fw_printenv mender_boot_part | awk -F = '{ print $2 }')
+
+	    #set inactive partition (backup) to active partition	
+        echo "Rollback to inactive partition..."
+        if [ $curr_mender_boot_part = "2" ]; then 
+    	    /sbin/fw_setenv "mender_boot_part" 3
+            /sbin/fw_setenv "mender_boot_part_hex" 3
+	        /sbin/fw_setenv "upgrade_available" 0
+            sync
+        elif [ $curr_mender_boot_part = "3" ]; then 
+	        /sbin/fw_setenv "mender_boot_part" 2
+            /sbin/fw_setenv "mender_boot_part_hex" 2
+	        /sbin/fw_setenv "upgrade_available" 0
+            sync
+        else 
+	        echo "Fatal error: mender_boot_part is undefined." && exit 1
+        fi        	
+        ;;
+
+esac
+exit 0
